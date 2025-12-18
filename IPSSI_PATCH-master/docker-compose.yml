@@ -1,19 +1,53 @@
 services:
-  backend:
-    build:
-      context: ./backend
-    ports:
-      - "${BACKEND_PORT:-8000}:8000"
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      # Persistance de la base SQLite côté hôte
-      - ./backend/database.db:/usr/src/app/database.db
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - backend_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    environment:
+      PORT: 8000
+      NODE_ENV: production
+      SEED_ON_START: "true"
+      DATABASE_URL: ${DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+    # Optionnel : exposer l'API seulement en local (debug)
+    ports:
+      - "127.0.0.1:${BACKEND_PORT}:8000"
+    networks:
+      - backend_net
+      - front_net
     restart: unless-stopped
 
   frontend:
-    build:
-      context: ./frontend/my-app
-    ports:
-      - "${FRONTEND_PORT:-3000}:80"
+    build: ./frontend/my-app
     depends_on:
       - backend
+    ports:
+      - "${FRONTEND_PORT}:80"
+    networks:
+      - front_net
     restart: unless-stopped
+
+volumes:
+  pgdata:
+
+networks:
+  backend_net:
+    internal: true
+  front_net:
